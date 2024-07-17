@@ -11,7 +11,6 @@ use device_query::{DeviceQuery, DeviceState};
 #[derive(Component, Default, Debug, Clone, Reflect)]
 pub struct DQ {
     pub device_state: DeviceState,
-    pub position: IVec2,
 }
 unsafe impl Sync for DQ {}
 unsafe impl Send for DQ {}
@@ -103,7 +102,6 @@ fn setup(
 
     commands.spawn(DQ {
         device_state: device_state,
-        position: IVec2::new(0, 0),
     });
 }
 
@@ -111,39 +109,25 @@ fn get_window(
     mut windows: Query<&mut Window>,
     mut dq: Query<&mut DQ>,
     buttons: Res<ButtonInput<MouseButton>>,
-    time: Res<Time>,
 ) {
     let mut window = windows.get_single_mut().unwrap();
 
     println!("Window size was: {},{}", window.width(), window.height());
-    let mut dq = dq.get_single_mut().unwrap();
-    let m = dq.device_state.clone().get_mouse();
+    let m = dq
+        .get_single_mut()
+        .unwrap()
+        .device_state
+        .clone()
+        .get_mouse();
 
     if buttons.pressed(MouseButton::Left) {
         let mouse = m.coords;
 
         let pos = &window.resolution;
-        let target_x = mouse.0 - pos.width() as i32 / 2;
-        let target_y = mouse.1 - pos.height() as i32 / 2;
+        let x = mouse.0 - pos.width() as i32 / 2;
+        let y = mouse.1 - pos.height() as i32 / 2;
 
-        // Get current position
-        let current_pos = dq.position.as_vec2();
-
-        // Calculate the direction to move
-        let direction = Vec2::new(target_x as f32, target_y as f32) - current_pos;
-
-        // Set a speed for the movement (adjust as needed)
-        let speed = 500.0; // pixels per second
-
-        // Calculate the movement based on delta time
-        let movement = direction.normalize() * speed * time.delta_seconds();
-
-        // Update the position
-        let new_pos = current_pos + movement;
-        let pos = IVec2::new(new_pos.x as i32, new_pos.y as i32);
-        // Set the new position
-        window.position.set(pos);
-        dq.position = pos;
+        window.position.set(IVec2 { x, y });
     }
 }
 
