@@ -1,231 +1,171 @@
-mod egui_tools;
+#![feature(trivial_bounds)]
 
-use crate::egui_tools::EguiRenderer;
-use egui_wgpu::ScreenDescriptor;
-use std::sync::Arc;
-use std::thread;
-use wgpu::{Backends, InstanceDescriptor, TextureFormat};
-use winit::dpi::{LogicalPosition, PhysicalSize};
-use winit::event::{Event, WindowEvent};
-use winit::event_loop::{ControlFlow, EventLoop};
-use winit::keyboard::{Key, ModifiersState, NamedKey};
-use winit::window::WindowLevel;
+use std::sync::{Arc, Mutex};
+
+use bevy::{
+    prelude::*,
+    window::{Cursor, WindowLevel, WindowResolution},
+};
+use device_query::{DeviceQuery, DeviceState};
+
+#[derive(Component, Default, Debug, Clone, Reflect)]
+pub struct DQ {
+    pub device_state: DeviceState,
+    pub position: IVec2,
+}
+unsafe impl Sync for DQ {}
+unsafe impl Send for DQ {}
 
 fn main() {
-    pollster::block_on(run());
-}
-
-async fn run() {
-    let event_loop = EventLoop::new().unwrap();
-
-    let builder = winit::window::WindowBuilder::new().with_transparent(true);
-    let window = builder.build(&event_loop).unwrap();
-    let window = Arc::new(window);
-
-    let initial_width = 1360;
-    let initial_height = 768;
-    window.request_inner_size(PhysicalSize::new(initial_width, initial_height));
-
-    window.set_window_level(WindowLevel::AlwaysOnTop);
-    window.set_cursor_hittest(false).unwrap();
-
-    let instance = wgpu::Instance::new(InstanceDescriptor::default());
-    let mut surface = unsafe { instance.create_surface(window.clone()) }.unwrap();
-    let power_pref = wgpu::PowerPreference::default();
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: power_pref,
-            force_fallback_adapter: false,
-            compatible_surface: Some(&surface),
-        })
-        .await
-        .expect("Failed to find an appropriate adapter");
-
-    let mut features = wgpu::Features::empty();
-    let (device, queue) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                required_features: features,
-                required_limits: Default::default(),
-            },
-            None,
-        )
-        .await
-        .expect("Failed to create device");
-
-    let swapchain_capabilities = surface.get_capabilities(&adapter);
-    let selected_format = TextureFormat::Bgra8UnormSrgb;
-    let swapchain_format = swapchain_capabilities
-        .formats
-        .iter()
-        .find(|d| **d == selected_format)
-        .expect("failed to select proper surface texture format!");
-
-    let mut config = wgpu::SurfaceConfiguration {
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-        format: *swapchain_format,
-        width: initial_width,
-        height: initial_height,
-        present_mode: wgpu::PresentMode::AutoVsync,
-        desired_maximum_frame_latency: 0,
-        alpha_mode: swapchain_capabilities.alpha_modes[0],
-        view_formats: vec![],
+    let window = Window {
+        // Enable transparent support for the window
+        transparent: true,
+        decorations: true,
+        window_level: WindowLevel::AlwaysOnTop,
+        resolution: WindowResolution::new(262.0, 243.0),
+        cursor: Cursor {
+            // Allow inputs to pass through to apps behind this app.
+            ..default()
+        },
+        ..default()
     };
 
-    surface.configure(&device, &config);
+    App::new()
+        .insert_resource(ClearColor(Color::NONE))
+        .add_plugins(
+            DefaultPlugins
+                .set(ImagePlugin::default_nearest())
+                .set(WindowPlugin {
+                    primary_window: Some(window),
+                    ..default()
+                })
+                .set(AssetPlugin {
+                    mode: AssetMode::Processed,
+                    ..default()
+                }),
+        )
+        .add_systems(Startup, setup)
+        .add_systems(Update, (animate_sprite, get_window))
+        .run();
+}
 
-    let mut egui_renderer = EguiRenderer::new(&device, config.format, None, 1, &window);
+#[derive(Component)]
+struct AnimationIndices {
+    first: usize,
+    last: usize,
+}
 
-    let mut close_requested = false;
-    let mut modifiers = ModifiersState::default();
+#[derive(Component, Deref, DerefMut)]
+struct AnimationTimer(Timer);
 
-    let mut scale_factor = 1.0;
+fn animate_sprite(
+    time: Res<Time>,
+    mut query: Query<(&AnimationIndices, &mut AnimationTimer, &mut TextureAtlas)>,
+) {
+    for (indices, mut timer, mut atlas) in &mut query {
+        timer.tick(time.delta());
+        if timer.just_finished() {
+            atlas.index = if atlas.index == indices.last {
+                indices.first
+            } else {
+                atlas.index + 1
+            };
+        }
+    }
+}
 
-    let window_clone = window.clone();
-    thread::spawn(move || {
-        use device_query::{DeviceQuery, DeviceState, Keycode, MouseState};
+fn setup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+) {
+    let texture = asset_server.load("rats/combined_rats.png");
+    dbg!(&texture);
+    let layout = TextureAtlasLayout::from_grid(UVec2::new(62, 44), 9, 27, None, None);
+    let texture_atlas_layout = texture_atlas_layouts.add(layout);
+    // Use only the subset of sprites in the sheet that make up the run animation
+    let animation_indices = AnimationIndices { first: 2, last: 6 };
+    commands.spawn(Camera2dBundle::default());
+    commands.spawn((
+        SpriteBundle {
+            transform: Transform::from_scale(Vec3::splat(6.0)),
+            texture,
+            ..default()
+        },
+        TextureAtlas {
+            layout: texture_atlas_layout,
+            index: animation_indices.first,
+        },
+        animation_indices,
+        AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
+    ));
+    let device_state = DeviceState::new();
 
-        let window = window_clone;
-        let device_state = DeviceState::new();
-        for _ in 0..500 {
-            let mouse: MouseState = device_state.get_mouse();
+    commands.spawn(DQ {
+        device_state: device_state,
+        position: IVec2::new(0, 0),
+    });
+}
 
-            window.set_outer_position(LogicalPosition::new(mouse.coords.0, mouse.coords.1));
+fn get_window(
+    mut windows: Query<&mut Window>,
+    mut dq: Query<&mut DQ>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    time: Res<Time>,
+) {
+    let mut window = windows.get_single_mut().unwrap();
 
-            println!("Current Mouse Coordinates: {:?}", mouse.coords);
-            //sleep for 60 fps
-            thread::sleep(std::time::Duration::from_millis(16));
+    println!("Window size was: {},{}", window.width(), window.height());
+    let mut dq = dq.get_single_mut().unwrap();
+    let m = dq.device_state.clone().get_mouse();
+
+    if buttons.pressed(MouseButton::Left) {
+        let mouse = m.coords;
+
+        let pos = &window.resolution;
+        let target_x = mouse.0 - pos.width() as i32 / 2;
+        let target_y = mouse.1 - pos.height() as i32 / 2;
+
+        // Get current position
+        let current_pos = dq.position.as_vec2();
+
+        // Calculate the direction to move
+        let direction = Vec2::new(target_x as f32, target_y as f32) - current_pos;
+
+        // Set a speed for the movement (adjust as needed)
+        let speed = 500.0; // pixels per second
+
+        // Calculate the movement based on delta time
+        let movement = direction.normalize() * speed * time.delta_seconds();
+
+        // Update the position
+        let new_pos = current_pos + movement;
+        let pos = IVec2::new(new_pos.x as i32, new_pos.y as i32);
+        // Set the new position
+        window.position.set(pos);
+        dq.position = pos;
+    }
+}
+
+#[derive(Component)]
+enum Direction {
+    Up,
+    Down,
+}
+
+/// The sprite is animated by changing its translation depending on the time that has passed since
+/// the last frame.
+fn sprite_movement(time: Res<Time>, mut sprite_position: Query<(&mut Direction, &mut Transform)>) {
+    for (mut logo, mut transform) in &mut sprite_position {
+        match *logo {
+            Direction::Up => transform.translation.y += 150. * time.delta_seconds(),
+            Direction::Down => transform.translation.y -= 150. * time.delta_seconds(),
         }
 
-        // let keys: Vec<Keycode> = device_state.get_keys();
-        // println!("Is A pressed? {}", keys.contains(&Keycode::A));
-    });
-
-    let _ = event_loop.run(move |event, elwt| {
-        elwt.set_control_flow(ControlFlow::Poll);
-
-        match event {
-            Event::WindowEvent { event, .. } => {
-                egui_renderer.handle_input(&window, &event);
-
-                match event {
-                    WindowEvent::CloseRequested => {
-                        close_requested = true;
-                    }
-                    WindowEvent::ModifiersChanged(new) => {
-                        modifiers = new.state();
-                    }
-                    WindowEvent::KeyboardInput {
-                        event: kb_event, ..
-                    } => {
-                        if kb_event.logical_key == Key::Named(NamedKey::Escape) {
-                            close_requested = true;
-                            return;
-                        }
-                    }
-                    WindowEvent::ActivationTokenDone { .. } => {}
-                    WindowEvent::Resized(new_size) => {
-                        // Resize surface:
-                        config.width = new_size.width;
-                        config.height = new_size.height;
-                        surface.configure(&device, &config);
-                    }
-                    WindowEvent::Moved(_) => {}
-                    WindowEvent::Destroyed => {}
-                    WindowEvent::DroppedFile(_) => {}
-                    WindowEvent::HoveredFile(_) => {}
-                    WindowEvent::HoveredFileCancelled => {}
-                    WindowEvent::Focused(_) => {}
-                    WindowEvent::Ime(_) => {}
-                    WindowEvent::CursorMoved { .. } => {}
-                    WindowEvent::CursorEntered { .. } => {}
-                    WindowEvent::CursorLeft { .. } => {}
-                    WindowEvent::MouseWheel { .. } => {}
-                    WindowEvent::MouseInput { .. } => {}
-                    WindowEvent::TouchpadMagnify { .. } => {}
-                    WindowEvent::SmartMagnify { .. } => {}
-                    WindowEvent::TouchpadRotate { .. } => {}
-                    WindowEvent::TouchpadPressure { .. } => {}
-                    WindowEvent::AxisMotion { .. } => {}
-                    WindowEvent::Touch(_) => {}
-                    WindowEvent::ScaleFactorChanged { .. } => {}
-                    WindowEvent::ThemeChanged(_) => {}
-                    WindowEvent::Occluded(_) => {}
-                    WindowEvent::RedrawRequested => {
-                        let surface_texture = surface
-                            .get_current_texture()
-                            .expect("Failed to acquire next swap chain texture");
-
-                        let surface_view = surface_texture
-                            .texture
-                            .create_view(&wgpu::TextureViewDescriptor::default());
-
-                        let mut encoder =
-                            device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                                label: None,
-                            });
-
-                        let screen_descriptor = ScreenDescriptor {
-                            size_in_pixels: [config.width, config.height],
-                            pixels_per_point: window.scale_factor() as f32 * scale_factor,
-                        };
-
-                        egui_renderer.draw(
-                            &device,
-                            &queue,
-                            &mut encoder,
-                            &window,
-                            &surface_view,
-                            screen_descriptor,
-                            |ctx| {
-                                egui::Window::new("winit + egui + wgpu says hello!")
-                                    .resizable(true)
-                                    .vscroll(true)
-                                    .default_open(false)
-                                    .show(&ctx, |ui| {
-                                        ui.label("Label!");
-
-                                        if ui.button("Button!").clicked() {
-                                            println!("boom!")
-                                        }
-
-                                        ui.separator();
-                                        ui.horizontal(|ui| {
-                                            ui.label(format!(
-                                                "Pixels per point: {}",
-                                                ctx.pixels_per_point()
-                                            ));
-                                            if ui.button("-").clicked() {
-                                                scale_factor = (scale_factor - 0.1).max(0.3);
-                                            }
-                                            if ui.button("+").clicked() {
-                                                scale_factor = (scale_factor + 0.1).min(3.0);
-                                            }
-                                        });
-                                    });
-                            },
-                        );
-
-                        queue.submit(Some(encoder.finish()));
-                        surface_texture.present();
-                        window.request_redraw();
-                    }
-                }
-            }
-
-            Event::NewEvents(_) => {}
-            Event::DeviceEvent { .. } => {}
-            Event::UserEvent(_) => {}
-            Event::Suspended => {}
-            Event::Resumed => {}
-            Event::AboutToWait => {
-                if close_requested {
-                    elwt.exit()
-                }
-            }
-            Event::LoopExiting => {}
-            Event::MemoryWarning => {}
+        if transform.translation.y > 200. {
+            *logo = Direction::Down;
+        } else if transform.translation.y < -200. {
+            *logo = Direction::Up;
         }
-    });
+    }
 }
