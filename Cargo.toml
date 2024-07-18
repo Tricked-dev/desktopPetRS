@@ -14,7 +14,18 @@ edition = "2021"
 device_query = "2.1.0"
 # image = "0.25.1"
 # bytemuck = "1.16.1"
-bevy = { version = "0.14.0", features = ["asset_processor", "basis-universal"] }
+bevy = { version = "0.14.0", default-features = false, features = [
+    "basis-universal",
+    "bevy_asset",
+    "bevy_animation",
+    "animation",
+    "bevy_winit",
+    "x11",
+    "png",
+    "bevy_render",
+    "bevy_sprite",
+    "bevy_state",
+] }
 rand = "0.8.5"
 
 [profile.release]

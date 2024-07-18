@@ -1,12 +1,8 @@
 #![feature(trivial_bounds)]
 
-use std::{
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use bevy::{
-    math::VectorSpace,
     prelude::*,
     window::{Cursor, WindowLevel, WindowResolution},
 };
@@ -136,7 +132,6 @@ fn get_window(
 ) {
     let mut window = windows.get_single_mut().unwrap();
 
-    // println!("Window size was: {},{}", window.width(), window.height());
     let mut dq = dq.get_single_mut().unwrap();
     let m = dq.device_state.clone().get_mouse();
 
@@ -195,7 +190,6 @@ fn get_window(
                 random.gen_range(0..dq.window_size.x as i32) as f32,
                 random.gen_range(0..dq.window_size.y as i32) as f32,
             );
-            dbg!("Enabled Wandering");
         } else {
             dq.wander = false;
         }
@@ -216,7 +210,12 @@ fn get_window(
             Vec2::ZERO
         };
 
-        let movement = direction * 50. * time.delta_seconds();
+        let speed = match dq.wander {
+            true => 120.0,
+            false => 50.0,
+        };
+
+        let movement = direction * speed * time.delta_seconds();
 
         let new_pos = current_pos + movement;
 
