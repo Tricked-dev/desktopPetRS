@@ -1,18 +1,28 @@
 #![feature(trivial_bounds)]
 
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use bevy::{
+    math::VectorSpace,
     prelude::*,
     window::{Cursor, WindowLevel, WindowResolution},
 };
 use device_query::{DeviceQuery, DeviceState};
+use rand::Rng;
 
-#[derive(Component, Default, Debug, Clone, Reflect)]
+#[derive(Component, Debug, Clone, Reflect)]
 pub struct DQ {
     pub device_state: DeviceState,
     pub position: Vec2,
     pub t: f32,
+    pub wander: bool,
+    pub wander_pos: Vec2,
+    pub last_clicked: Instant,
+    pub window_size: Vec2,
+    pub wandering_since: Instant,
 }
 unsafe impl Sync for DQ {}
 unsafe impl Send for DQ {}
@@ -21,7 +31,7 @@ fn main() {
     let window = Window {
         // Enable transparent support for the window
         transparent: true,
-        decorations: true,
+        decorations: false,
         window_level: WindowLevel::AlwaysOnTop,
         resolution: WindowResolution::new(262.0, 243.0),
         cursor: Cursor {
@@ -84,7 +94,6 @@ fn setup(
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
     let texture = asset_server.load("rats/combined_rats.png");
-    dbg!(&texture);
     let layout = TextureAtlasLayout::from_grid(UVec2::new(62, 44), 9, 27, None, None);
     let texture_atlas_layout = texture_atlas_layouts.add(layout);
     // Use only the subset of sprites in the sheet that make up the run animation
@@ -107,9 +116,14 @@ fn setup(
     let device_state = DeviceState::new();
 
     commands.spawn(DQ {
-        device_state: device_state,
-        position: Vec2::new(0.0, 0.0),
+        device_state,
+        last_clicked: Instant::now(),
+        wandering_since: Instant::now(),
+        position: Vec2::ZERO,
         t: 0.0,
+        wander: false,
+        wander_pos: Vec2::ZERO,
+        window_size: Vec2::ZERO,
     });
 }
 
@@ -133,7 +147,28 @@ fn get_window(
     let target_x = mouse.0 as f32 - pos.width() / 2.;
     let target_y = mouse.1 as f32 - pos.height() / 2.;
 
-    let target_pos = Vec2::new(target_x, target_y);
+    if target_x > dq.window_size.x {
+        dq.window_size.x = target_x;
+    }
+
+    if target_y > dq.window_size.y {
+        dq.window_size.y = target_y;
+    }
+
+    let mut target_pos = Vec2::new(target_x, target_y);
+
+    if dq.wander {
+        target_pos = dq.wander_pos;
+
+        if dq.wandering_since.elapsed().as_millis() > 1000 * 12 {
+            dq.wandering_since = Instant::now();
+            let mut rng = rand::thread_rng();
+            dq.wander_pos = Vec2::new(
+                rng.gen_range(0..dq.window_size.x as i32) as f32,
+                rng.gen_range(0..dq.window_size.y as i32) as f32,
+            );
+        }
+    }
 
     let current_pos = match dq.position {
         pos if pos.x == 0.0 && pos.y == 0.0 => target_pos,
@@ -143,12 +178,29 @@ fn get_window(
     let difference = target_pos - current_pos;
 
     if difference.x.abs() > 1.2 {
+        let mut sp = sprite.get_single_mut().unwrap();
         if difference.x > 0.0 {
-            sprite.get_single_mut().unwrap().scale.x = 6.0;
+            sp.scale.x = 6.0;
         } else {
-            sprite.get_single_mut().unwrap().scale.x = -6.0;
+            sp.scale.x = -6.0;
         }
     }
+
+    if buttons.just_pressed(MouseButton::Left) {
+        if Instant::now() - dq.last_clicked < Duration::from_millis(500) {
+            let mut random = rand::thread_rng();
+            dq.wander = true;
+            dq.wandering_since = Instant::now();
+            dq.wander_pos = Vec2::new(
+                random.gen_range(0..dq.window_size.x as i32) as f32,
+                random.gen_range(0..dq.window_size.y as i32) as f32,
+            );
+            dbg!("Enabled Wandering");
+        } else {
+            dq.wander = false;
+        }
+        dq.last_clicked = Instant::now();
+    };
 
     if buttons.pressed(MouseButton::Left) {
         dq.t = (dq.t + time.delta_seconds() * 0.02).min(1.0);
@@ -168,9 +220,7 @@ fn get_window(
 
         let new_pos = current_pos + movement;
 
-        let new_pos_ivec = new_pos.round().as_ivec2();
-
-        window.position.set(new_pos_ivec);
+        window.position.set(new_pos.round().as_ivec2());
         dq.position = new_pos;
         dq.t = 0.0;
     }
