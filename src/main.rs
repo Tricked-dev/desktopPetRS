@@ -75,6 +75,9 @@ fn animate_sprite(
     }
 }
 
+#[derive(Component)]
+struct Rat;
+
 fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -99,6 +102,7 @@ fn setup(
         },
         animation_indices,
         AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
+        Rat,
     ));
     let device_state = DeviceState::new();
 
@@ -112,6 +116,7 @@ fn setup(
 fn get_window(
     mut windows: Query<&mut Window>,
     mut dq: Query<&mut DQ>,
+    mut sprite: Query<&mut Transform, With<Rat>>,
     buttons: Res<ButtonInput<MouseButton>>,
     time: Res<Time>,
 ) {
@@ -135,6 +140,16 @@ fn get_window(
         pos => pos,
     };
 
+    let difference = target_pos - current_pos;
+
+    if difference.x.abs() > 1.2 {
+        if difference.x > 0.0 {
+            sprite.get_single_mut().unwrap().scale.x = 6.0;
+        } else {
+            sprite.get_single_mut().unwrap().scale.x = -6.0;
+        }
+    }
+
     if buttons.pressed(MouseButton::Left) {
         dq.t = (dq.t + time.delta_seconds() * 0.02).min(1.0);
 
@@ -143,9 +158,8 @@ fn get_window(
         window.position.set(new_pos.round().as_ivec2());
         dq.position = new_pos;
     } else {
-        let direction = target_pos - current_pos;
-        let direction = if direction.length() != 0.0 {
-            direction.normalize()
+        let direction = if difference.length() != 0.0 {
+            difference.normalize()
         } else {
             Vec2::ZERO
         };
@@ -157,31 +171,7 @@ fn get_window(
         let new_pos_ivec = new_pos.round().as_ivec2();
 
         window.position.set(new_pos_ivec);
-
         dq.position = new_pos;
         dq.t = 0.0;
-    }
-}
-
-#[derive(Component)]
-enum Direction {
-    Up,
-    Down,
-}
-
-/// The sprite is animated by changing its translation depending on the time that has passed since
-/// the last frame.
-fn sprite_movement(time: Res<Time>, mut sprite_position: Query<(&mut Direction, &mut Transform)>) {
-    for (mut logo, mut transform) in &mut sprite_position {
-        match *logo {
-            Direction::Up => transform.translation.y += 150. * time.delta_seconds(),
-            Direction::Down => transform.translation.y -= 150. * time.delta_seconds(),
-        }
-
-        if transform.translation.y > 200. {
-            *logo = Direction::Down;
-        } else if transform.translation.y < -200. {
-            *logo = Direction::Up;
-        }
     }
 }
