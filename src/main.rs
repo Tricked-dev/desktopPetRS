@@ -11,7 +11,7 @@ use device_query::{DeviceQuery, DeviceState};
 #[derive(Component, Default, Debug, Clone, Reflect)]
 pub struct DQ {
     pub device_state: DeviceState,
-    pub position: IVec2,
+    pub position: Vec2,
     pub t: f32,
 }
 unsafe impl Sync for DQ {}
@@ -104,7 +104,7 @@ fn setup(
 
     commands.spawn(DQ {
         device_state: device_state,
-        position: IVec2::new(0, 0),
+        position: Vec2::new(0.0, 0.0),
         t: 0.0,
     });
 }
@@ -121,42 +121,28 @@ fn get_window(
     let mut dq = dq.get_single_mut().unwrap();
     let m = dq.device_state.clone().get_mouse();
 
+    // HEy
+    let mouse = m.coords;
+
+    let pos = &window.resolution;
+    let target_x = mouse.0 as f32 - pos.width() / 2.;
+    let target_y = mouse.1 as f32 - pos.height() / 2.;
+
+    let target_pos = Vec2::new(target_x, target_y);
+
+    let current_pos = match dq.position {
+        pos if pos.x == 0.0 && pos.y == 0.0 => target_pos,
+        pos => pos,
+    };
+
     if buttons.pressed(MouseButton::Left) {
         dq.t = (dq.t + time.delta_seconds() * 0.02).min(1.0);
-        let mouse = m.coords;
 
-        let pos = &window.resolution;
-        let target_x = mouse.0 - pos.width() as i32 / 2;
-        let target_y = mouse.1 - pos.height() as i32 / 2;
-        let target_pos = Vec2::new(target_x as f32, target_y as f32);
+        let new_pos = current_pos.lerp(target_pos, dq.t);
 
-        let current_pos = match dq.position.as_vec2() {
-            pos if pos.x == 0.0 && pos.y == 0.0 => Vec2::new(target_x as f32, target_y as f32),
-            pos => pos,
-        };
-
-        let new_pos = current_pos.lerp(target_pos, dq.t).as_ivec2();
-
-        window.position.set(new_pos);
+        window.position.set(new_pos.round().as_ivec2());
         dq.position = new_pos;
     } else {
-        let mouse = m.coords;
-
-        // Get the window resolution
-        let pos = &window.resolution;
-        let target_x = mouse.0 - pos.width() as i32 / 2;
-        let target_y = mouse.1 - pos.height() as i32 / 2;
-
-        // Create a target position vector
-        let target_pos = Vec2::new(target_x as f32, target_y as f32);
-
-        // Get the current position or initialize it to the target position if it's at the origin
-        let current_pos = match dq.position.as_vec2() {
-            pos if pos.x == 0.0 && pos.y == 0.0 => target_pos,
-            pos => pos,
-        };
-
-        // Calculate the direction vector from the current position to the target position
         let direction = target_pos - current_pos;
         let direction = if direction.length() != 0.0 {
             direction.normalize()
@@ -164,20 +150,15 @@ fn get_window(
             Vec2::ZERO
         };
 
-        // Calculate the movement vector based on direction, speed (0.5), and delta time
-        let movement = direction * 0.5 * time.delta_seconds();
+        let movement = direction * 50. * time.delta_seconds();
 
-        // Update the new position by adding the movement vector to the current position
         let new_pos = current_pos + movement;
 
-        // Convert the new position to integer coordinates
-        let new_pos_ivec = new_pos.as_ivec2();
+        let new_pos_ivec = new_pos.round().as_ivec2();
 
-        // Set the window position to the new position
         window.position.set(new_pos_ivec);
 
-        // Update the entity's position
-        dq.position = new_pos_ivec;
+        dq.position = new_pos;
         dq.t = 0.0;
     }
 }
