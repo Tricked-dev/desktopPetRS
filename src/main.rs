@@ -29,7 +29,7 @@ fn main() {
         transparent: true,
         decorations: false,
         window_level: WindowLevel::AlwaysOnTop,
-        resolution: WindowResolution::new(310.0, 243.0),
+        resolution: WindowResolution::new(350.0, 243.0),
         cursor: Cursor {
             // Allow inputs to pass through to apps behind this app.
             ..default()
@@ -52,7 +52,7 @@ fn main() {
                 }),
         )
         .add_systems(Startup, setup)
-        .add_systems(Update, (execute_animations, get_window))
+        .add_systems(Update, (execute_animations, change_skin, get_window))
         .run();
 }
 
@@ -140,6 +140,21 @@ fn execute_animations(
                 atlas.index += 1;
                 config.frame_timer = AnimationConfig::timer_from_fps(config.fps);
             }
+        }
+    }
+}
+
+fn change_skin(
+    buttons: Res<ButtonInput<MouseButton>>,
+    mut query: Query<(&mut AnimationConfig, &mut TextureAtlas)>,
+) {
+    if buttons.just_pressed(MouseButton::Right) {
+        for (mut config, _) in &mut query {
+            config.style = match config.style {
+                Style::Crimson => Style::House,
+                Style::House => Style::Toxic,
+                Style::Toxic => Style::Crimson,
+            };
         }
     }
 }
