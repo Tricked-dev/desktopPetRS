@@ -4,16 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# wgpu = { version = "0.19.1", features = ["glsl"] }
-# egui = "0.26.0"
-# raw-window-handle = "0.6.0"
-# egui-wgpu = { version = "0.26.0", features = ["winit"] }
-# egui-winit = "0.26.0"
-# winit = "0.29.4"
-# pollster = "0.3.0"
 device_query = "2.1.0"
-# image = "0.25.1"
-# bytemuck = "1.16.1"
 bevy = { version = "0.14.0", default-features = false, features = [
     "basis-universal",
     "bevy_asset",
