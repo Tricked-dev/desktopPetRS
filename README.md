@@ -1,4 +1,4 @@
-# DesktopPetRS
+# Desktop~~rat~~Pet
 
 ![](./preview.mp4)
 
@@ -12,6 +12,7 @@ Features:
 - 3 Skins
 - A couple of animations pretty bad though tbh
 - Linux & Windows support
+- You can open 10 rats at once and still have decent performance
 
 Todo:
 
@@ -19,3 +20,6 @@ Todo:
 - Config options maybe?
 - Add assets to binary
 - Maybe some new functionality to the pet the limits are endless
+- Make 200 rats at once possible and pretty workable
+
+![image](https://github.com/user-attachments/assets/96c4afea-91a4-4730-af09-cac96d5eabb2)
