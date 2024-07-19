@@ -29,7 +29,7 @@ fn main() {
         transparent: true,
         decorations: false,
         window_level: WindowLevel::AlwaysOnTop,
-        resolution: WindowResolution::new(262.0, 243.0),
+        resolution: WindowResolution::new(310.0, 243.0),
         cursor: Cursor {
             // Allow inputs to pass through to apps behind this app.
             ..default()
@@ -52,31 +52,94 @@ fn main() {
                 }),
         )
         .add_systems(Startup, setup)
-        .add_systems(Update, (animate_sprite, get_window))
+        .add_systems(Update, (execute_animations, get_window))
         .run();
 }
 
-#[derive(Component)]
-struct AnimationIndices {
-    first: usize,
-    last: usize,
+// #[derive(Component)]
+// struct AnimationIndices {
+//     first: usize,
+//     last: usize,
+// }
+
+// #[derive(Component, Deref, DerefMut)]
+// struct AnimationTimer(Timer);
+
+// fn animate_sprite(
+//     time: Res<Time>,
+//     mut query: Query<(&AnimationIndices, &mut AnimationTimer, &mut TextureAtlas)>,
+// ) {
+//     for (indices, mut timer, mut atlas) in &mut query {
+//         timer.tick(time.delta());
+//         if timer.just_finished() {
+//             atlas.index = if atlas.index == indices.last {
+//                 indices.first
+//             } else {
+//                 atlas.index + 1
+//             };
+//         }
+//     }
+// }
+
+#[derive(Component, Debug)]
+struct AnimationConfig {
+    first_sprite_index: usize,
+    last_sprite_index: usize,
+    fps: u8,
+    frame_timer: Timer,
+    style: Style,
 }
 
-#[derive(Component, Deref, DerefMut)]
-struct AnimationTimer(Timer);
+#[derive(Debug)]
+enum Style {
+    Crimson,
+    House,
+    Toxic,
+}
 
-fn animate_sprite(
+impl Style {
+    fn get_starting_point(&self) -> usize {
+        match self {
+            Style::Crimson => 0,
+            Style::House => 81,
+            Style::Toxic => 81 * 2,
+        }
+    }
+}
+
+impl AnimationConfig {
+    fn new(first: usize, last: usize, fps: u8) -> Self {
+        Self {
+            first_sprite_index: first,
+            last_sprite_index: last,
+            fps,
+            frame_timer: Self::timer_from_fps(fps),
+            style: Style::Toxic,
+        }
+    }
+
+    fn timer_from_fps(fps: u8) -> Timer {
+        Timer::new(Duration::from_secs_f32(1.0 / (fps as f32)), TimerMode::Once)
+    }
+}
+
+fn execute_animations(
     time: Res<Time>,
-    mut query: Query<(&AnimationIndices, &mut AnimationTimer, &mut TextureAtlas)>,
+    mut query: Query<(&mut AnimationConfig, &mut TextureAtlas)>,
 ) {
-    for (indices, mut timer, mut atlas) in &mut query {
-        timer.tick(time.delta());
-        if timer.just_finished() {
-            atlas.index = if atlas.index == indices.last {
-                indices.first
+    for (mut config, mut atlas) in &mut query {
+        let additional = config.style.get_starting_point();
+        config.frame_timer.tick(time.delta());
+        if config.frame_timer.just_finished() {
+            dbg!(&atlas.index, &config);
+            if atlas.index >= config.last_sprite_index + additional
+                || atlas.index < (config.first_sprite_index + additional)
+            {
+                atlas.index = config.first_sprite_index + additional;
             } else {
-                atlas.index + 1
-            };
+                atlas.index += 1;
+                config.frame_timer = AnimationConfig::timer_from_fps(config.fps);
+            }
         }
     }
 }
@@ -93,7 +156,8 @@ fn setup(
     let layout = TextureAtlasLayout::from_grid(UVec2::new(62, 44), 9, 27, None, None);
     let texture_atlas_layout = texture_atlas_layouts.add(layout);
     // Use only the subset of sprites in the sheet that make up the run animation
-    let animation_indices = AnimationIndices { first: 2, last: 6 };
+
+    let animation_config = AnimationConfig::new(0, 6, 10);
     commands.spawn(Camera2dBundle::default());
     commands.spawn((
         SpriteBundle {
@@ -103,11 +167,10 @@ fn setup(
         },
         TextureAtlas {
             layout: texture_atlas_layout,
-            index: animation_indices.first,
+            index: animation_config.first_sprite_index,
         },
-        animation_indices,
-        AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
         Rat,
+        animation_config,
     ));
     let device_state = DeviceState::new();
 
@@ -127,6 +190,7 @@ fn get_window(
     mut windows: Query<&mut Window>,
     mut dq: Query<&mut DQ>,
     mut sprite: Query<&mut Transform, With<Rat>>,
+    mut animation: Query<&mut AnimationConfig>,
     buttons: Res<ButtonInput<MouseButton>>,
     time: Res<Time>,
 ) {
@@ -135,7 +199,6 @@ fn get_window(
     let mut dq = dq.get_single_mut().unwrap();
     let m = dq.device_state.clone().get_mouse();
 
-    // HEy
     let mouse = m.coords;
 
     let pos = &window.resolution;
@@ -152,16 +215,22 @@ fn get_window(
 
     let mut target_pos = Vec2::new(target_x, target_y);
 
-    if dq.wander {
-        target_pos = dq.wander_pos;
-
-        if dq.wandering_since.elapsed().as_millis() > 1000 * 12 {
+    macro_rules! change_wander {
+        () => {
             dq.wandering_since = Instant::now();
             let mut rng = rand::thread_rng();
             dq.wander_pos = Vec2::new(
                 rng.gen_range(0..dq.window_size.x as i32) as f32,
                 rng.gen_range(0..dq.window_size.y as i32) as f32,
             );
+        };
+    }
+
+    if dq.wander {
+        target_pos = dq.wander_pos;
+
+        if dq.wandering_since.elapsed().as_millis() > 1000 * 12 {
+            change_wander!();
         }
     }
 
@@ -181,18 +250,19 @@ fn get_window(
         }
     }
 
+    let mut anim = animation.get_single_mut().unwrap();
+    anim.frame_timer.set_mode(TimerMode::Repeating);
     if buttons.just_pressed(MouseButton::Left) {
         if Instant::now() - dq.last_clicked < Duration::from_millis(500) {
-            let mut random = rand::thread_rng();
             dq.wander = true;
-            dq.wandering_since = Instant::now();
-            dq.wander_pos = Vec2::new(
-                random.gen_range(0..dq.window_size.x as i32) as f32,
-                random.gen_range(0..dq.window_size.y as i32) as f32,
-            );
+            change_wander!();
         } else {
             dq.wander = false;
         }
+        // anim.frame_timer = AnimationConfig::timer_from_fps(anim.fps);
+        // anim.first_sprite_index = 20;
+        // anim.last_sprite_index = 27;
+        anim.frame_timer.set_mode(TimerMode::Repeating);
         dq.last_clicked = Instant::now();
     };
 
@@ -200,6 +270,14 @@ fn get_window(
         dq.t = (dq.t + time.delta_seconds() * 0.02).min(1.0);
 
         let new_pos = current_pos.lerp(target_pos, dq.t);
+
+        if new_pos.x < 0.22 {
+            anim.first_sprite_index = 0;
+            anim.last_sprite_index = 6;
+        } else {
+            anim.first_sprite_index = 19;
+            anim.last_sprite_index = 20;
+        }
 
         window.position.set(new_pos.round().as_ivec2());
         dq.position = new_pos;
@@ -218,6 +296,14 @@ fn get_window(
         let movement = direction * speed * time.delta_seconds();
 
         let new_pos = current_pos + movement;
+
+        if new_pos.x < 0.22 {
+            anim.first_sprite_index = 0;
+            anim.last_sprite_index = 6;
+        } else {
+            anim.first_sprite_index = 8;
+            anim.last_sprite_index = 15;
+        }
 
         window.position.set(new_pos.round().as_ivec2());
         dq.position = new_pos;
