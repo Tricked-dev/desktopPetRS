@@ -1,6 +1,6 @@
 # Desktop~~rat~~Pet
 
-![](./preview.mp4)
+https://github.com/user-attachments/assets/8ae04879-da36-430c-8ff4-9e7bcda562cb
 
 A desktop pet app thingy? written using bevy.
 
