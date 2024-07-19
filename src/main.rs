@@ -20,6 +20,9 @@ pub struct DQ {
     pub last_clicked: Instant,
     pub window_size: Vec2,
     pub wandering_since: Instant,
+    pub movement: Vec2,
+    pub last_movement: Vec2,
+    pub movement_timer: Timer,
 }
 unsafe impl Sync for DQ {}
 unsafe impl Send for DQ {}
@@ -61,31 +64,6 @@ fn main() {
         .run();
 }
 
-// #[derive(Component)]
-// struct AnimationIndices {
-//     first: usize,
-//     last: usize,
-// }
-
-// #[derive(Component, Deref, DerefMut)]
-// struct AnimationTimer(Timer);
-
-// fn animate_sprite(
-//     time: Res<Time>,
-//     mut query: Query<(&AnimationIndices, &mut AnimationTimer, &mut TextureAtlas)>,
-// ) {
-//     for (indices, mut timer, mut atlas) in &mut query {
-//         timer.tick(time.delta());
-//         if timer.just_finished() {
-//             atlas.index = if atlas.index == indices.last {
-//                 indices.first
-//             } else {
-//                 atlas.index + 1
-//             };
-//         }
-//     }
-// }
-
 #[derive(Component, Debug)]
 struct AnimationConfig {
     first_sprite_index: usize,
@@ -93,6 +71,31 @@ struct AnimationConfig {
     fps: u8,
     frame_timer: Timer,
     style: Style,
+}
+
+impl AnimationConfig {
+    fn set_animation(&mut self, animation: Animations) {
+        match animation {
+            Animations::Walking => {
+                self.first_sprite_index = 8;
+                self.last_sprite_index = 15;
+            }
+            Animations::Flying => {
+                self.first_sprite_index = 19;
+                self.last_sprite_index = 20;
+            }
+            Animations::Idle => {
+                self.first_sprite_index = 0;
+                self.last_sprite_index = 6;
+            }
+        }
+    }
+}
+
+enum Animations {
+    Walking,
+    Flying,
+    Idle,
 }
 
 #[derive(Debug)]
@@ -197,6 +200,9 @@ fn setup(
         wander: false,
         wander_pos: Vec2::ZERO,
         window_size: Vec2::ZERO,
+        movement_timer: Timer::from_seconds(0.3, TimerMode::Repeating),
+        movement: Vec2::ZERO,
+        last_movement: Vec2::ZERO,
     });
 }
 
@@ -248,6 +254,12 @@ fn get_window(
         }
     }
 
+    dq.movement_timer.tick(time.delta());
+    if dq.movement_timer.just_finished() {
+        dq.last_movement = dq.movement;
+        dq.movement = Vec2::ZERO;
+    }
+
     let current_pos = match dq.position {
         pos if pos.x == 0.0 && pos.y == 0.0 => target_pos,
         pos => pos,
@@ -273,9 +285,6 @@ fn get_window(
         } else {
             dq.wander = false;
         }
-        // anim.frame_timer = AnimationConfig::timer_from_fps(anim.fps);
-        // anim.first_sprite_index = 20;
-        // anim.last_sprite_index = 27;
         anim.frame_timer.set_mode(TimerMode::Repeating);
         dq.last_clicked = Instant::now();
     };
@@ -285,13 +294,13 @@ fn get_window(
 
         let new_pos = current_pos.lerp(target_pos, dq.t);
 
-        if new_pos.x < 0.22 {
-            anim.first_sprite_index = 0;
-            anim.last_sprite_index = 6;
+        if dq.last_movement.x < 0.12 {
+            anim.set_animation(Animations::Idle);
         } else {
-            anim.first_sprite_index = 19;
-            anim.last_sprite_index = 20;
+            anim.set_animation(Animations::Flying);
         }
+
+        dq.movement += (new_pos - current_pos).abs();
 
         window.position.set(new_pos.round().as_ivec2());
         dq.position = new_pos;
@@ -311,12 +320,12 @@ fn get_window(
 
         let new_pos = current_pos + movement;
 
-        if new_pos.x < 0.22 {
-            anim.first_sprite_index = 0;
-            anim.last_sprite_index = 6;
+        dq.movement += difference.abs();
+
+        if dq.last_movement.x < 20.0 || dq.last_movement.y < 20.0 {
+            anim.set_animation(Animations::Idle);
         } else {
-            anim.first_sprite_index = 8;
-            anim.last_sprite_index = 15;
+            anim.set_animation(Animations::Walking);
         }
 
         window.position.set(new_pos.round().as_ivec2());
