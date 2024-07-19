@@ -3,6 +3,7 @@
 use std::time::{Duration, Instant};
 
 use bevy::{
+    input::common_conditions::input_just_pressed,
     prelude::*,
     window::{Cursor, WindowLevel, WindowResolution},
 };
@@ -29,7 +30,7 @@ fn main() {
         transparent: true,
         decorations: false,
         window_level: WindowLevel::AlwaysOnTop,
-        resolution: WindowResolution::new(350.0, 243.0),
+        resolution: WindowResolution::new(390.0, 243.0),
         cursor: Cursor {
             // Allow inputs to pass through to apps behind this app.
             ..default()
@@ -52,7 +53,11 @@ fn main() {
                 }),
         )
         .add_systems(Startup, setup)
-        .add_systems(Update, (execute_animations, change_skin, get_window))
+        .add_systems(Update, (execute_animations, get_window))
+        .add_systems(
+            Update,
+            change_skin.run_if(input_just_pressed(MouseButton::Right)),
+        )
         .run();
 }
 
@@ -131,7 +136,6 @@ fn execute_animations(
         let additional = config.style.get_starting_point();
         config.frame_timer.tick(time.delta());
         if config.frame_timer.just_finished() {
-            dbg!(&atlas.index, &config);
             if atlas.index >= config.last_sprite_index + additional
                 || atlas.index < (config.first_sprite_index + additional)
             {
@@ -144,18 +148,13 @@ fn execute_animations(
     }
 }
 
-fn change_skin(
-    buttons: Res<ButtonInput<MouseButton>>,
-    mut query: Query<(&mut AnimationConfig, &mut TextureAtlas)>,
-) {
-    if buttons.just_pressed(MouseButton::Right) {
-        for (mut config, _) in &mut query {
-            config.style = match config.style {
-                Style::Crimson => Style::House,
-                Style::House => Style::Toxic,
-                Style::Toxic => Style::Crimson,
-            };
-        }
+fn change_skin(mut query: Query<&mut AnimationConfig>) {
+    for mut config in &mut query {
+        config.style = match config.style {
+            Style::Crimson => Style::House,
+            Style::House => Style::Toxic,
+            Style::Toxic => Style::Crimson,
+        };
     }
 }
 
