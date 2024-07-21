@@ -1,14 +1,18 @@
 #![feature(trivial_bounds)]
+#![windows_subsystem = "windows"]
 
 use std::time::{Duration, Instant};
 
 use bevy::{
     input::common_conditions::input_just_pressed,
     prelude::*,
-    window::{Cursor, WindowLevel, WindowResolution},
+    render::{
+        render_asset::RenderAssetUsages,
+        texture::{CompressedImageFormats, ImageSampler, ImageType},
+    },
+    window::{WindowLevel, WindowResolution},
 };
 use device_query::{DeviceQuery, DeviceState};
-use rand::Rng;
 
 #[derive(Component, Debug, Clone, Reflect)]
 pub struct DQ {
@@ -24,37 +28,32 @@ pub struct DQ {
     pub last_movement: Vec2,
     pub movement_timer: Timer,
 }
+
+// so far no issues, this is needed cause DeviceState
 unsafe impl Sync for DQ {}
 unsafe impl Send for DQ {}
 
 fn main() {
     let window = Window {
-        // Enable transparent support for the window
         transparent: true,
         decorations: false,
         window_level: WindowLevel::AlwaysOnTop,
         resolution: WindowResolution::new(390.0, 243.0),
-        cursor: Cursor {
-            // Allow inputs to pass through to apps behind this app.
-            ..default()
-        },
         ..default()
     };
 
     App::new()
         .insert_resource(ClearColor(Color::NONE))
-        .add_plugins(
-            DefaultPlugins
-                .set(ImagePlugin::default_nearest())
-                .set(WindowPlugin {
-                    primary_window: Some(window),
-                    ..default()
-                })
-                .set(AssetPlugin {
-                    mode: AssetMode::Unprocessed,
-                    ..default()
-                }),
-        )
+        .add_plugins((DefaultPlugins
+            .set(ImagePlugin::default_nearest())
+            .set(WindowPlugin {
+                primary_window: Some(window),
+                ..default()
+            })
+            .set(AssetPlugin {
+                mode: AssetMode::Unprocessed,
+                ..default()
+            }),))
         .add_systems(Startup, setup)
         .add_systems(Update, (execute_animations, get_window))
         .add_systems(
@@ -116,13 +115,13 @@ impl Style {
 }
 
 impl AnimationConfig {
-    fn new(first: usize, last: usize, fps: u8) -> Self {
+    fn new(first: usize, last: usize, fps: u8, style: Style) -> Self {
         Self {
             first_sprite_index: first,
             last_sprite_index: last,
             fps,
             frame_timer: Self::timer_from_fps(fps),
-            style: Style::Toxic,
+            style: style,
         }
     }
 
@@ -169,12 +168,29 @@ fn setup(
     asset_server: Res<AssetServer>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
-    let texture = asset_server.load("combined_rats.png");
+    let image = Image::from_buffer(
+        include_bytes!("../assets/combined_rats.png"),
+        ImageType::Extension("png"),
+        CompressedImageFormats::all(),
+        true,
+        ImageSampler::Default,
+        RenderAssetUsages::default(),
+    )
+    .unwrap();
+    let texture = asset_server.add(image);
     let layout = TextureAtlasLayout::from_grid(UVec2::new(62, 44), 9, 27, None, None);
     let texture_atlas_layout = texture_atlas_layouts.add(layout);
-    // Use only the subset of sprites in the sheet that make up the run animation
 
-    let animation_config = AnimationConfig::new(0, 6, 10);
+    let animation_config = AnimationConfig::new(
+        0,
+        6,
+        10,
+        match fastrand::i8(0..=2) {
+            1 => Style::Crimson,
+            2 => Style::Toxic,
+            _ => Style::House,
+        },
+    );
     commands.spawn(Camera2dBundle::default());
     commands.spawn((
         SpriteBundle {
@@ -238,10 +254,9 @@ fn get_window(
     macro_rules! change_wander {
         () => {
             dq.wandering_since = Instant::now();
-            let mut rng = rand::thread_rng();
             dq.wander_pos = Vec2::new(
-                rng.gen_range(0..dq.window_size.x as i32) as f32,
-                rng.gen_range(0..dq.window_size.y as i32) as f32,
+                fastrand::i32(0..dq.window_size.x as i32) as f32,
+                fastrand::i32(0..dq.window_size.y as i32) as f32,
             );
         };
     }

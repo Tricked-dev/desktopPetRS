@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 device_query = "2.1.0"
 bevy = { version = "0.14.0", default-features = false, features = [
-    "basis-universal",
     "bevy_asset",
     "bevy_animation",
     "animation",
@@ -17,14 +16,15 @@ bevy = { version = "0.14.0", default-features = false, features = [
     "bevy_sprite",
     "bevy_state",
 ] }
-rand = "0.8.5"
+fastrand = "2.1.0"
 
 [profile.release]
 codegen-units = 1
 lto = "thin"
+strip = true
+opt-level = "z"
+panic = "abort"
 
-# [profile.dev]
-# opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
